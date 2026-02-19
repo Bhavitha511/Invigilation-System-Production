@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% load timetable_extras %}
+
+{% block title %}Exam Detail{% endblock %}
+
+{% block content %}
+<h1 class="mb-3">{{ exam.course_code }} - {{ exam.course_name }}</h1>
+<p>
+  <strong>Date:</strong> {{ exam.exam_date }}<br>
+  <strong>Time:</strong> {{ exam.start_time }} - {{ exam.end_time }}<br>
+  <strong>Department:</strong> {{ exam.department.code }}<br>
+</p>
+
+<div class="mb-3">
+  <a href="{% url 'exams:auto_allocate_for_exam' exam.pk %}" class="btn btn-success">Auto Allocate Invigilators</a>
+  {% if has_assignments %}
+    <button class="btn btn-outline-secondary" disabled title="Rooms cannot be changed after assignments are made.">Assign Duties (Select Rooms)</button>
+  {% else %}
+    <a href="{% url 'exams:configure_exam_halls' exam.pk %}" class="btn btn-outline-primary">Assign Duties (Select Rooms)</a>
+  {% endif %}
+  <a href="{% url 'exams:export_exam_allocation_csv' exam.pk %}" class="btn btn-outline-secondary">Export Allocation (CSV)</a>
+  <a href="{% url 'exams:exam_list' %}" class="btn btn-secondary">Back to Exams</a>
+</div>
+
+<h3>Halls & Assignments</h3>
+<table class="table table-bordered">
+  <thead>
+    <tr>
+      <th>Hall</th>
+      <th>Block</th>
+      <th>Required Invigilators</th>
+      <th>Assigned Invigilators</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for session in session_halls %}
+      <tr>
+        <td>{{ session.hall.name }}</td>
+        <td>{{ session.hall.block }}</td>
+        <td>{{ session.required_invigilators }}</td>
+        <td>
+          {% with hall_key=session.hall %}
+            {% if assignments_by_hall|dict_get:hall_key %}
+              <ul class="mb-0">
+                {% for assignment in assignments_by_hall|dict_get:hall_key %}
+                  <li>
+                    {{ assignment.faculty.user.get_full_name|default:assignment.faculty.user.username }}
+                    ({{ assignment.faculty.department.code }}) - {{ assignment.status }}
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <span class="text-muted">No assignments yet.</span>
+            {% endif %}
+          {% endwith %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="4" class="text-center p-3">No halls assigned for this exam.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

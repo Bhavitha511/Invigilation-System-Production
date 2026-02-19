@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% load timetable_extras %}
+
+{% block title %}My Timetable{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">My Timetable</h1>
+{% if approved_leaves %}
+  <div class="alert alert-info" role="alert">
+    <strong>Approved Leave:</strong>
+    <ul class="mb-0">
+      {% for leave in approved_leaves %}
+        <li>{{ leave.start_date }} to {{ leave.end_date }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+<div class="mb-3">
+  <a href="{% url 'timetable:add_slot' %}" class="btn btn-primary">Add Time Slot</a>
+</div>
+<table class="table table-bordered table-striped align-middle text-center">
+  <thead class="table-light">
+    <tr>
+      <th scope="col">Day</th>
+      {% for key, label in time_slots %}
+        <th scope="col">{{ label }}</th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for day_code, day_label in days %}
+      <tr>
+        <th scope="row" class="text-start">{{ day_label }}</th>
+        {% for key, label in time_slots %}
+          {% with cell_slots=grid|dict_get:day_code|dict_get:key %}
+            <td>
+              {% if cell_slots %}
+                {% for s in cell_slots %}
+                  <div class="mb-1">
+                    <div class="fw-semibold">
+                      {{ s.course_code }} {{ s.course_name }}
+                    </div>
+                    {% if s.year %}
+                      <div class="text-muted small">Year: {{ s.year }}</div>
+                    {% endif %}
+                    {% if s.is_lab %}
+                      <span class="badge text-bg-info">Lab</span>
+                    {% endif %}
+                    <div class="mt-1">
+                      <a href="{% url 'timetable:delete_slot' s.pk %}"
+                         class="btn btn-sm btn-outline-danger"
+                         onclick="return confirm('Delete this slot?');">
+                        Delete
+                      </a>
+                    </div>
+                  </div>
+                {% endfor %}
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+          {% endwith %}
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

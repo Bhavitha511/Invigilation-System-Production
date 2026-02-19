@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% block title %}Manage Subjects / Courses{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Manage Subjects / Courses</h1>
+<form method="post" class="card card-body shadow-sm mb-4" style="max-width: 600px;">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <div class="mb-3">
+    {{ form.year.label_tag }}
+    {{ form.year }}
+  </div>
+  <div class="mb-3">
+    {{ form.code.label_tag }}
+    {{ form.code }}
+  </div>
+  <div class="mb-3">
+    {{ form.name.label_tag }}
+    {{ form.name }}
+  </div>
+  <button type="submit" class="btn btn-primary">Add Course</button>
+</form>
+
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Year</th>
+      <th>Code</th>
+      <th>Name</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for course in courses %}
+      <tr>
+        <td>{{ course.year }}</td>
+        <td>{{ course.code }}</td>
+        <td>{{ course.name }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="3" class="text-center p-3">No courses defined yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

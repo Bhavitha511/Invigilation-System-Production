@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block title %}invivgilation duties{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-center" style="min-height: 70vh;">
+  <div class="text-center" style="max-width: 700px;">
+    <h1 class="display-4 mb-3">Welcome to <span class="fw-bold">invivgilation duties</span></h1>
+    <p class="lead mb-4">
+      A smart portal to manage exam invigilation schedules, faculty availability,
+      and hall allocations in a fair and automated way. Platform admins can
+      plan exams and allocate duties, while faculty can view duties, update
+      timetables, and apply for leave from a single place.
+    </p>
+    {% if user.is_authenticated %}
+      {% if user.is_staff %}
+        <a href="{% url 'exams:admin_dashboard' %}" class="btn btn-primary btn-lg me-2">Go to Admin Dashboard</a>
+      {% else %}
+        <a href="{% url 'exams:faculty_dashboard' %}" class="btn btn-primary btn-lg me-2">Go to Faculty Dashboard</a>
+      {% endif %}
+      <a href="{% url 'accounts:logout' %}" class="btn btn-outline-light btn-lg">Logout</a>
+    {% else %}
+      <a href="{% url 'accounts:login' %}" class="btn btn-primary btn-lg">Login to Continue</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
