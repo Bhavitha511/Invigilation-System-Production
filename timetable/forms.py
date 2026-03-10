@@ -19,7 +19,37 @@ class TimetableUploadForm(forms.Form):
 class CourseForm(forms.ModelForm):
     class Meta:
         model = Course
-        fields = ["year", "code", "name"]
+        fields = ["department", "year", "semester", "code", "name"]
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Add Bootstrap classes to all fields
+        for field_name, field in self.fields.items():
+            if isinstance(field.widget, forms.Select):
+                field.widget.attrs.update({'class': 'form-select'})
+            else:
+                field.widget.attrs.update({'class': 'form-control'})
+        
+        # Department dropdown
+        self.fields["department"].widget = forms.Select(
+            attrs={'class': 'form-select'},
+            choices=[("", "Select department")] + [(dept.id, f"{dept.code} - {dept.name}") for dept in self.fields["department"].queryset]
+        )
+        # Year dropdown 1-4
+        self.fields["year"].widget = forms.Select(
+            attrs={'class': 'form-select'},
+            choices=[("", "Select year"), (1, "Year 1"), (2, "Year 2"), (3, "Year 3"), (4, "Year 4")]
+        )
+        # Semester dropdown 1-2
+        self.fields["semester"].widget = forms.Select(
+            attrs={'class': 'form-select'},
+            choices=[("", "Select semester"), (1, "Semester 1"), (2, "Semester 2")]
+        )
+        
+        # Add placeholders
+        self.fields["code"].widget.attrs.update({'placeholder': 'e.g., CS101, R204GA05101'})
+        self.fields["name"].widget.attrs.update({'placeholder': 'e.g., Programming Fundamentals'})
 
 
 class FacultyTimeSlotForm(forms.ModelForm):

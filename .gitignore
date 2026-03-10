@@ -1,13 +1,12 @@
-# Dependencies
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Production builds
-dist/
-build/
-out/
+# Django specific
+*.log
+*.pot
+*.pyc
+__pycache__/
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
 
 # Environment variables
 .env
@@ -16,12 +15,44 @@ out/
 .env.test.local
 .env.production.local
 
+# Python
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
 # IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.spyderproject
+.spyproject
 
 # OS generated files
 .DS_Store
@@ -32,65 +63,53 @@ out/
 ehthumbs.db
 Thumbs.db
 
-# Logs
-logs/
-*.log
+# Testing
+.coverage
+.pytest_cache/
+.tox/
+.nox/
+htmlcov/
 
-# Runtime data
-pids/
-*.pid
-*.seed
-*.pid.lock
+# Jupyter Notebook
+.ipynb_checkpoints
 
-# Coverage directory used by tools like istanbul
-coverage/
-*.lcov
+# pyenv
+.python-version
 
-# nyc test coverage
-.nyc_output
+# Celery
+celerybeat-schedule
+celerybeat.pid
 
-# Temporary folders
-tmp/
-temp/
+# SageMath parsed files
+*.sage.py
 
-# Optional npm cache directory
-.npm
+# Rope project settings
+.ropeproject
 
-# Optional eslint cache
-.eslintcache
+# mkdocs documentation
+/site
 
-# Package managers
-package-lock.json
-yarn.lock
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+# Static files (collected)
+staticfiles/
+static_root/
 
-# Java
-*.class
-*.jar
-*.war
-*.ear
-*.zip
-*.tar.gz
-*.rar
-target/
-.mvn/
+# Node.js (if using frontend tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~.nib
 
-# Cache
-.cache/
-.parcel-cache/
+# Documentation and development files (optional - uncomment if you don't want to track these)
+# docs/
+# *.md

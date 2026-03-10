@@ -9,6 +9,7 @@ from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.views import LoginView
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.mail import send_mail
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.http import JsonResponse
@@ -187,13 +188,36 @@ def first_login_password_change(request):
 @staff_member_required
 def faculty_list(request):
     """List all faculty with search and pagination."""
+    from django.core.paginator import Paginator
+    
     faculty_qs = Faculty.objects.select_related("user", "department").order_by("user__last_name", "user__first_name")
     q = request.GET.get("q", "").strip()
     if q:
         faculty_qs = faculty_qs.filter(
             Q(user__first_name__icontains=q) | Q(user__last_name__icontains=q) | Q(employee_id__icontains=q) | Q(user__email__icontains=q)
         )
-    return render(request, "accounts/faculty_list.html", {"faculty": faculty_qs, "q": q})
+    
+    # Calculate statistics
+    total_faculty_count = Faculty.objects.filter(is_active=True).count()
+    first_login_count = Faculty.objects.filter(must_change_password=True, is_active=True).count()
+    active_faculty_count = Faculty.objects.filter(is_active=True).count()
+    inactive_faculty_count = Faculty.objects.filter(is_active=False).count()
+    
+    # Pagination
+    paginator = Paginator(faculty_qs, 25)  # 25 faculty per page
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        "page_obj": page_obj, 
+        "q": q,
+        "total_faculty_count": total_faculty_count,
+        "first_login_count": first_login_count,
+        "active_faculty_count": active_faculty_count,
+        "inactive_faculty_count": inactive_faculty_count,
+    }
+    
+    return render(request, "accounts/faculty_list.html", context)
 
 
 def _generate_random_password(length=12):
@@ -226,55 +250,63 @@ def create_faculty_batch(request):
 
             created_count = 0
             skipped = []
-            for i, emp_id in enumerate(employee_ids):
-                if not emp_id.strip():
-                    continue
-                if Faculty.objects.filter(employee_id=emp_id.strip()).exists():
-                    skipped.append(emp_id.strip())
-                    continue
-                if get_user_model().objects.filter(email=emails[i].strip()).exists():
-                    skipped.append(emails[i].strip())
-                    continue
-                department = Department.objects.get(id=department_ids[i])
-                # Generate username and random password
-                username = f"{first_names[i].strip().lower()}.{last_names[i].strip().lower()}"
-                password = _generate_random_password()
-                user = get_user_model().objects.create_user(username=username, email=emails[i].strip(), password=password, is_staff=False)
-                user.first_name = first_names[i].strip()
-                user.last_name = last_names[i].strip()
-                user.save()
-                faculty = Faculty.objects.create(
-                    user=user,
-                    employee_id=emp_id.strip(),
-                    department=department,
-                    cabin_block=cabin_blocks[i].strip(),
-                    cabin_room=cabin_rooms[i].strip(),
-                    phone_number=phones[i].strip(),
-                    must_change_password=True,
-                )
-                # Send credentials via email
-                subject = "Your Faculty Account Credentials"
-                message = (
-                    f"Dear {user.get_full_name()},\n\n"
-                    f"Your faculty account has been created.\n\n"
-                    f"Username: {username}\n"
-                    f"Password: {password}\n\n"
-                    f"Login URL: {request.scheme}://{request.get_host()}/accounts/login/\n\n"
-                    f"On first login, you will be prompted to verify an OTP sent to this email and then change your password.\n"
-                    f"If you face any issues, contact the admin."
-                )
-                send_mail(
-                    subject=subject,
-                    message=message,
-                    from_email=None,
-                    recipient_list=[user.email],
-                    fail_silently=True,
-                )
-                created_count += 1
-            if skipped:
-                messages.warning(request, f"Skipped {len(skipped)} duplicates: {', '.join(skipped)}")
-            messages.success(request, f"Created {created_count} faculty profiles. Credentials have been emailed to each faculty.")
-            return redirect("accounts:faculty_list")
+            
+            try:
+                with transaction.atomic():
+                    for i, emp_id in enumerate(employee_ids):
+                        if not emp_id.strip():
+                            continue
+                        if Faculty.objects.filter(employee_id=emp_id.strip()).exists():
+                            skipped.append(emp_id.strip())
+                            continue
+                        if get_user_model().objects.filter(email=emails[i].strip()).exists():
+                            skipped.append(emails[i].strip())
+                            continue
+                        department = Department.objects.get(id=department_ids[i])
+                        # Generate username and random password
+                        username = f"{first_names[i].strip().lower()}.{last_names[i].strip().lower()}"
+                        password = _generate_random_password()
+                        user = get_user_model().objects.create_user(username=username, email=emails[i].strip(), password=password, is_staff=False)
+                        user.first_name = first_names[i].strip()
+                        user.last_name = last_names[i].strip()
+                        user.save()
+                        faculty = Faculty.objects.create(
+                            user=user,
+                            employee_id=emp_id.strip(),
+                            department=department,
+                            cabin_block=cabin_blocks[i].strip(),
+                            cabin_room=cabin_rooms[i].strip(),
+                            phone_number=phones[i].strip(),
+                            must_change_password=True,
+                        )
+                        # Send credentials via email
+                        subject = "Your Faculty Account Credentials"
+                        message = (
+                            f"Dear {user.get_full_name()},\n\n"
+                            f"Your faculty account has been created.\n\n"
+                            f"Username: {username}\n"
+                            f"Password: {password}\n\n"
+                            f"Login URL: {request.scheme}://{request.get_host()}/accounts/login/\n\n"
+                            f"On first login, you will be prompted to verify an OTP sent to this email and then change your password.\n"
+                            f"If you face any issues, contact the admin."
+                        )
+                        send_mail(
+                            subject=subject,
+                            message=message,
+                            from_email=None,
+                            recipient_list=[user.email],
+                            fail_silently=True,
+                        )
+                        created_count += 1
+                    
+                    if skipped:
+                        messages.warning(request, f"Skipped {len(skipped)} duplicates: {', '.join(skipped)}")
+                    messages.success(request, f"Created {created_count} faculty profiles. Credentials have been emailed to each faculty.")
+                    return redirect("accounts:faculty_list")
+                    
+            except Exception as e:
+                messages.error(request, f"Error creating faculty profiles: {str(e)}")
+                return render(request, "accounts/create_faculty_batch.html", {"departments": departments})
     return render(request, "accounts/create_faculty_batch.html", {"departments": departments})
 
 

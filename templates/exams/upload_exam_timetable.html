@@ -16,6 +16,7 @@
   <li><code>start_time</code> (HH:MM)</li>
   <li><code>end_time</code> (HH:MM)</li>
 </ul>
+<p class="text-info"><strong>Note:</strong> The day of the week (e.g., Monday, Tuesday) will be automatically calculated from the exam date.</p>
 <form method="post" enctype="multipart/form-data" class="card card-body shadow-sm" style="max-width: 700px;">
   {% csrf_token %}
   {{ form.non_field_errors }}

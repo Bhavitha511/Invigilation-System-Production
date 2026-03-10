@@ -9,9 +9,10 @@ from django.db.models import Prefetch
 from .models import Exam, Department, ExamSessionHall, InvigilationAssignment
 from accounts.models import Faculty
 from leaves.models import FacultyLeave
-from timetable.models import FacultyTimeSlot
-from .forms import ExamTimetableUploadForm
+from timetable.models import FacultyTimeSlot, Course
+from .forms import ExamTimetableUploadForm, ExamCreateForm
 from datetime import datetime, timedelta
+import json
 import csv
 
 User = get_user_model()
@@ -53,12 +54,29 @@ def admin_dashboard(request):
         status=InvigilationAssignment.PENDING_CONFIRMATION
     ).select_related("exam_session_hall__exam")
 
+    # Calculate comprehensive statistics
+    total_faculty_count = Faculty.objects.filter(is_active=True).count()
+    first_login_count = Faculty.objects.filter(must_change_password=True, is_active=True).count()
+    upcoming_exams_count = Exam.objects.filter(exam_date__gte=today).count()
+    today_exams_count = Exam.objects.filter(exam_date=today).count()
+    pending_assignments_count = pending_assignments.count()
+    
+    # Additional statistics
+    total_departments = Department.objects.count()
+    total_exams = Exam.objects.count()
+    completed_exams = Exam.objects.filter(exam_date__lt=today).count()
+
     context = {
-        "upcoming_exams_count": Exam.objects.filter(exam_date__gte=today).count(),
-        "today_exams_count": Exam.objects.filter(exam_date=today).count(),
-        "pending_assignments_count": pending_assignments.count(),
+        "upcoming_exams_count": upcoming_exams_count,
+        "today_exams_count": today_exams_count,
+        "pending_assignments_count": pending_assignments_count,
         "upcoming_exams": upcoming_exams,
-        "total_faculty_count": Faculty.objects.filter(is_active=True).count(),
+        "total_faculty_count": total_faculty_count,
+        "first_login_count": first_login_count,
+        "total_departments": total_departments,
+        "total_exams": total_exams,
+        "completed_exams": completed_exams,
+        "today": today,
     }
     return render(request, "exams/admin_dashboard.html", context)
 
@@ -114,6 +132,176 @@ def upload_exam_timetable(request):
         form = ExamTimetableUploadForm()
 
     return render(request, "exams/upload_exam_timetable.html", {"form": form})
+
+
+@staff_member_required
+def create_exam(request):
+    """Create a single exam via UI form."""
+    
+    if request.method == "POST":
+        form = ExamCreateForm(request.POST)
+        if form.is_valid():
+            # Get the course to populate course_name
+            try:
+                course = Course.objects.get(
+                    code=form.cleaned_data['course_code'],
+                    department=form.cleaned_data['department'],
+                    year=form.cleaned_data['year'],
+                    semester=form.cleaned_data['semester']
+                )
+                course_name = course.name
+            except Course.DoesNotExist:
+                course_name = form.cleaned_data['course_code']
+            
+            exam = form.save(commit=False)
+            exam.course_name = course_name
+            exam.created_by = request.user
+            exam.save()
+            messages.success(request, f"Exam '{exam.course_code} - {exam.course_name}' created successfully.")
+            return redirect("exams:exam_list")
+    else:
+        form = ExamCreateForm()
+
+    return render(request, "exams/create_exam.html", {"form": form})
+
+
+@staff_member_required
+def create_exam_batch(request):
+    """Create multiple exams at once"""
+    import json
+    from datetime import datetime
+    from django.db import transaction
+    
+    departments = Department.objects.all().order_by('code')
+    departments_json = json.dumps([{'id': d.id, 'code': d.code, 'name': d.name} for d in departments])
+    
+    if request.method == "POST":
+        created_count = 0
+        errors = []
+        
+        # Parse the form data
+        exam_data = {}
+        for key, value in request.POST.items():
+            if key.startswith('exams['):
+                # Parse exams[0][department] format
+                parts = key.replace('exams[', '').replace(']', '').split('[')
+                if len(parts) == 2:
+                    index, field = parts
+                    if index not in exam_data:
+                        exam_data[index] = {}
+                    exam_data[index][field] = value
+        
+        try:
+            with transaction.atomic():
+                # Create exams
+                for index, data in exam_data.items():
+                    try:
+                        # Validate required fields
+                        required_fields = ['department', 'year', 'semester', 'course_code', 
+                                         'exam_type', 'exam_date', 'start_time', 'end_time']
+                        missing = [f for f in required_fields if not data.get(f)]
+                        if missing:
+                            errors.append(f"Row {int(index)+1}: Missing fields: {', '.join(missing)}")
+                            continue
+                        
+                        # Get department
+                        department = Department.objects.get(id=data['department'])
+                        
+                        # Lookup course name from Course model
+                        course_code = data['course_code']
+                        try:
+                            course = Course.objects.get(
+                                code=course_code,
+                                department=department,
+                                year=int(data['year']),
+                                semester=int(data['semester'])
+                            )
+                            course_name = course.name
+                        except Course.DoesNotExist:
+                            # Fallback to provided course_name or course_code
+                            course_name = data.get('course_name', course_code)
+                        
+                        # Parse date and time
+                        exam_date = datetime.strptime(data['exam_date'], '%Y-%m-%d').date()
+                        start_time = datetime.strptime(data['start_time'], '%H:%M').time()
+                        end_time = datetime.strptime(data['end_time'], '%H:%M').time()
+                        
+                        # Create exam
+                        exam = Exam.objects.create(
+                            course_code=course_code,
+                            course_name=course_name,
+                            exam_type=data['exam_type'],
+                            department=department,
+                            year=int(data['year']),
+                            semester=int(data['semester']),
+                            exam_date=exam_date,
+                            start_time=start_time,
+                            end_time=end_time,
+                            created_by=request.user
+                        )
+                        created_count += 1
+                        
+                    except Department.DoesNotExist:
+                        errors.append(f"Row {int(index)+1}: Invalid department")
+                    except ValueError as e:
+                        errors.append(f"Row {int(index)+1}: Invalid date/time format - {str(e)}")
+                    except Exception as e:
+                        errors.append(f"Row {int(index)+1}: Error - {str(e)}")
+                
+                # If there are errors, rollback by raising exception
+                if errors:
+                    raise Exception("Validation errors occurred")
+                
+                # Show success message
+                messages.success(request, f"Successfully created {created_count} exam(s)!")
+                return redirect("exams:exam_list")
+                
+        except Exception as e:
+            # Show errors
+            if errors:
+                for error in errors:
+                    messages.error(request, error)
+            else:
+                messages.error(request, f"Error creating exams: {str(e)}")
+    
+    context = {
+        'departments_json': departments_json,
+    }
+    return render(request, "exams/create_exam_batch.html", context)
+
+
+@login_required
+def api_courses(request):
+    """API endpoint to fetch courses by department, year and semester."""
+    department_id = request.GET.get('department')
+    year = request.GET.get('year')
+    semester = request.GET.get('semester')
+    
+    print(f"API called with: department={department_id}, year={year}, semester={semester}")
+    
+    if not department_id or not year or not semester:
+        print("Missing parameters")
+        return JsonResponse({'courses': []})
+    
+    try:
+        department_id = int(department_id)
+        year = int(year)
+        semester = int(semester)
+        print(f"Parsed: department_id={department_id}, year={year}, semester={semester}")
+        
+        courses = Course.objects.filter(
+            department_id=department_id, 
+            year=year, 
+            semester=semester
+        ).values('code', 'name')
+        
+        courses_list = list(courses)
+        print(f"Found courses: {courses_list}")
+        
+        return JsonResponse({'courses': courses_list})
+    except (ValueError, TypeError) as e:
+        print(f"Error parsing parameters: {e}")
+        return JsonResponse({'courses': []})
 
 
 @staff_member_required
@@ -295,6 +483,8 @@ def exam_list(request):
 
 @staff_member_required
 def exam_detail(request, pk):
+    from exams.models import AllocationSuggestion
+    
     exam = get_object_or_404(Exam.objects.select_related("department"), pk=pk)
     session_halls = (
         ExamSessionHall.objects.filter(exam=exam)
@@ -314,12 +504,19 @@ def exam_detail(request, pk):
         assignments_by_hall.setdefault(session.hall, list(session.assignments.all()))
 
     has_assignments = InvigilationAssignment.objects.filter(exam_session_hall__exam=exam).exists()
+    
+    # Check for pending suggestions
+    pending_suggestions_count = AllocationSuggestion.objects.filter(
+        exam=exam,
+        status=AllocationSuggestion.PENDING
+    ).count()
 
     context = {
         "exam": exam,
         "session_halls": session_halls,
         "assignments_by_hall": assignments_by_hall,
         "has_assignments": has_assignments,
+        "pending_suggestions_count": pending_suggestions_count,
     }
     return render(request, "exams/exam_detail.html", context)
 
@@ -388,23 +585,44 @@ def configure_exam_halls(request, pk):
 
 
 def _faculty_has_clash(faculty, exam):
+    """
+    Check if faculty has a timetable clash with the exam.
+    Returns: (has_clash: bool, clash_details: dict or None)
+    
+    Logic:
+    - If faculty is teaching the SAME year students during exam time, 
+      they are FREE (students are in exam, class cancelled)
+    - If faculty is teaching DIFFERENT year students, they have a CLASH
+    """
     exam_start = datetime.combine(exam.exam_date, exam.start_time)
     exam_end = datetime.combine(exam.exam_date, exam.end_time)
 
     weekday = exam.exam_date.strftime("%a").upper()[:3]
 
     slots = FacultyTimeSlot.objects.filter(faculty=faculty, day_of_week=weekday)
+    
     for slot in slots:
-        # If this teaching slot is for the same student year as the exam,
-        # we assume that class is cancelled because of the exam, so it
-        # does NOT block invigilation duties.
-        if slot.year and slot.year == exam.year:
-            continue
         slot_start = datetime.combine(exam.exam_date, slot.start_time)
         slot_end = datetime.combine(exam.exam_date, slot.end_time)
+        
+        # Check if there's a time overlap
         if slot_start < exam_end and exam_start < slot_end:
-            return True
-    return False
+            # If teaching the same year as exam, class is cancelled (students in exam)
+            # So faculty is FREE - no clash
+            if slot.year and slot.year == exam.year:
+                continue
+            
+            # Faculty is teaching different year students - CLASH!
+            clash_info = {
+                'slot': slot,
+                'time': f"{slot.start_time.strftime('%H:%M')} - {slot.end_time.strftime('%H:%M')}",
+                'course': f"{slot.course_code} - {slot.course_name}" if slot.course_code else "Unknown Course",
+                'year': slot.year,
+                'is_lab': slot.is_lab
+            }
+            return True, clash_info
+    
+    return False, None
 
 
 def _faculty_on_approved_leave(faculty, exam_date):
@@ -418,6 +636,11 @@ def _faculty_on_approved_leave(faculty, exam_date):
 
 @staff_member_required
 def auto_allocate_for_exam(request, pk):
+    from exams.utils import send_invigilation_assignment_email
+    from exams.models import AllocationSuggestion
+    import random
+    import json
+    
     exam = get_object_or_404(Exam.objects.select_related("department"), pk=pk)
     session_halls = ExamSessionHall.objects.filter(exam=exam).select_related("hall")
 
@@ -436,6 +659,13 @@ def auto_allocate_for_exam(request, pk):
         InvigilationAssignment.objects.filter(exam_session_hall__exam=exam).values_list("faculty_id", flat=True)
     )
 
+    total_assigned = 0
+    total_emails_sent = 0
+    total_suggestions = 0
+    
+    # Store all suggestions for this allocation
+    all_suggestions = []
+
     for session in session_halls:
         required = session.required_invigilators
         if required <= 0:
@@ -444,41 +674,120 @@ def auto_allocate_for_exam(request, pk):
         current_assignments = InvigilationAssignment.objects.filter(exam_session_hall=session)
         already_assigned_ids = set(current_assignments.values_list("faculty_id", flat=True)) | global_assigned_ids
 
-        # Debug counters
-        excluded_dept = 0
-        excluded_assigned = 0
-        excluded_leave = 0
-        excluded_clash = 0
-
+        # Categorize faculty
         eligible = []
+        ineligible_with_reasons = []
+        
         for faculty in all_faculty:
-            # Exclude same department (already done in query, but count for debug)
+            # Check 1: Same department (already excluded in query, but track for reporting)
             if faculty.department == exam.department:
-                excluded_dept += 1
+                ineligible_with_reasons.append({
+                    'faculty': faculty,
+                    'reason': 'SAME_DEPT',
+                    'details': f"Faculty from {exam.department.code} cannot invigilate {exam.department.code} students"
+                })
                 continue
+            
+            # Check 2: Subject teacher
+            if exam.subject_teacher and faculty.id == exam.subject_teacher.id:
+                ineligible_with_reasons.append({
+                    'faculty': faculty,
+                    'reason': 'SUBJECT_TEACHER',
+                    'details': f"Teaching the subject: {exam.course_code} - {exam.course_name}"
+                })
+                continue
+            
+            # Check 3: Already assigned
             if faculty.id in already_assigned_ids:
-                excluded_assigned += 1
+                ineligible_with_reasons.append({
+                    'faculty': faculty,
+                    'reason': 'ALREADY_ASSIGNED',
+                    'details': f"Already assigned to another hall for this exam"
+                })
                 continue
+            
+            # Check 4: On approved leave
             if _faculty_on_approved_leave(faculty, exam.exam_date):
-                excluded_leave += 1
+                ineligible_with_reasons.append({
+                    'faculty': faculty,
+                    'reason': 'ON_LEAVE',
+                    'details': f"On approved leave on {exam.exam_date}"
+                })
                 continue
-            if _faculty_has_clash(faculty, exam):
-                excluded_clash += 1
+            
+            # Check 5: Timetable clash (enhanced)
+            has_clash, clash_info = _faculty_has_clash(faculty, exam)
+            if has_clash:
+                # Create suggestion for manual intervention
+                suggestion_text = (
+                    f"Faculty {faculty.user.get_full_name()} ({faculty.employee_id}) has a class during exam time:\n"
+                    f"- Time: {clash_info['time']}\n"
+                    f"- Course: {clash_info['course']}\n"
+                    f"- Teaching Year {clash_info['year']} students\n\n"
+                    f"Suggestions:\n"
+                    f"1. Swap this class with another faculty member\n"
+                    f"2. Reschedule this class to a different time slot\n"
+                    f"3. Find a substitute teacher for this period\n"
+                    f"4. Cancel this class for the day (if possible)"
+                )
+                
+                ineligible_with_reasons.append({
+                    'faculty': faculty,
+                    'reason': 'TIMETABLE_CLASH',
+                    'details': f"Teaching {clash_info['course']} to Year {clash_info['year']} at {clash_info['time']}",
+                    'clash_info': clash_info,
+                    'suggestion': suggestion_text
+                })
                 continue
+            
+            # Faculty is eligible!
             eligible.append(faculty)
 
+        # Score eligible faculty based on proximity and workload
         scored = []
         for faculty in eligible:
             score = 0
-            if faculty.cabin_block and faculty.cabin_block == session.hall.block:
-                score += 10
-            load = InvigilationAssignment.objects.filter(faculty=faculty).count()
+            
+            # Proximity bonus: same block gets highest priority
+            if faculty.cabin_block and faculty.cabin_block.strip().upper() == session.hall.block.strip().upper():
+                score += 100
+            
+            # Workload: faculty with fewer assignments get priority
+            load = InvigilationAssignment.objects.filter(
+                faculty=faculty,
+                status__in=[InvigilationAssignment.CONFIRMED, InvigilationAssignment.PENDING_CONFIRMATION]
+            ).count()
+            
             scored.append((score, load, faculty))
 
+        # Sort by score (descending) then by load (ascending)
         scored.sort(key=lambda item: (-item[0], item[1]))
+
+        # Add randomization among faculty with same score and similar load
+        if scored:
+            final_list = []
+            i = 0
+            while i < len(scored):
+                current_score = scored[i][0]
+                current_load = scored[i][1]
+                
+                # Collect faculty with same score and load within ±1
+                group = []
+                j = i
+                while j < len(scored) and scored[j][0] == current_score and abs(scored[j][1] - current_load) <= 1:
+                    group.append(scored[j])
+                    j += 1
+                
+                # Randomize within group
+                random.shuffle(group)
+                final_list.extend(group)
+                i = j
+            
+            scored = final_list
 
         chosen = [faculty for _, _, faculty in scored[:required]]
 
+        # Assign chosen faculty
         for faculty in chosen:
             assignment, created = InvigilationAssignment.objects.get_or_create(
                 exam_session_hall=session,
@@ -489,20 +798,88 @@ def auto_allocate_for_exam(request, pk):
             )
             if created:
                 global_assigned_ids.add(faculty.id)
+                
+                # Set deadline: 1.5 hours before exam start
                 exam_start_dt = datetime.combine(exam.exam_date, exam.start_time)
                 deadline = timezone.make_aware(exam_start_dt) - timedelta(hours=1, minutes=30)
                 assignment.confirmation_deadline = deadline
                 assignment.notification_sent_at = timezone.now()
                 assignment.save(update_fields=["confirmation_deadline", "notification_sent_at"])
+                
+                # Send email notification
+                if send_invigilation_assignment_email(assignment):
+                    total_emails_sent += 1
+                
+                total_assigned += 1
 
+        # If we couldn't fill all required positions, create suggestions
+        shortage = required - len(chosen)
+        if shortage > 0:
+            # Sort ineligible faculty by reason priority
+            # Priority: TIMETABLE_CLASH > ON_LEAVE > ALREADY_ASSIGNED > SUBJECT_TEACHER > SAME_DEPT
+            priority_order = {
+                'TIMETABLE_CLASH': 1,
+                'ON_LEAVE': 2,
+                'ALREADY_ASSIGNED': 3,
+                'SUBJECT_TEACHER': 4,
+                'SAME_DEPT': 5
+            }
+            
+            ineligible_with_reasons.sort(key=lambda x: priority_order.get(x['reason'], 99))
+            
+            # Create suggestions for top candidates (those with timetable clashes)
+            for item in ineligible_with_reasons[:shortage]:
+                if item['reason'] == 'TIMETABLE_CLASH':
+                    suggestion = AllocationSuggestion.objects.create(
+                        exam=exam,
+                        exam_session_hall=session,
+                        faculty=item['faculty'],
+                        clash_type=item['reason'],
+                        clash_details=json.dumps({
+                            'details': item['details'],
+                            'clash_info': {
+                                'time': item['clash_info']['time'],
+                                'course': item['clash_info']['course'],
+                                'year': item['clash_info']['year'],
+                                'is_lab': item['clash_info']['is_lab']
+                            }
+                        }),
+                        suggestion_type='SWAP_CLASS',
+                        suggestion_text=item['suggestion']
+                    )
+                    all_suggestions.append(suggestion)
+                    total_suggestions += 1
+            
+            messages.warning(
+                request,
+                f"⚠️ {session.hall.name}: Could only assign {len(chosen)} of {required} required invigilators. "
+                f"{total_suggestions} suggestions created for manual review."
+            )
+        
         # Debug info for this session
         messages.info(
             request,
-            f"Session {session.hall.name}: {len(eligible)} eligible, {len(chosen)} assigned (required {required}). "
-            f"Excluded: dept={excluded_dept}, assigned={excluded_assigned}, leave={excluded_leave}, clash={excluded_clash}."
+            f"✓ {session.hall.name}: {len(eligible)} eligible, {len(chosen)} assigned (required {required}). "
+            f"Excluded: same_dept={len([x for x in ineligible_with_reasons if x['reason']=='SAME_DEPT'])}, "
+            f"subject_teacher={len([x for x in ineligible_with_reasons if x['reason']=='SUBJECT_TEACHER'])}, "
+            f"assigned={len([x for x in ineligible_with_reasons if x['reason']=='ALREADY_ASSIGNED'])}, "
+            f"leave={len([x for x in ineligible_with_reasons if x['reason']=='ON_LEAVE'])}, "
+            f"clash={len([x for x in ineligible_with_reasons if x['reason']=='TIMETABLE_CLASH'])}"
         )
 
-    messages.success(request, "Invigilation duties have been auto-allocated for this exam where possible.")
+    # Final summary
+    if total_suggestions > 0:
+        messages.warning(
+            request,
+            f"⚠️ MANUAL REVIEW REQUIRED: {total_suggestions} suggestions created. "
+            f"<a href='/exams/admin/exams/{exam.pk}/suggestions/' class='alert-link'>Click here to review suggestions</a>",
+            extra_tags='safe'
+        )
+    
+    messages.success(
+        request, 
+        f"✅ Invigilation duties auto-allocated: {total_assigned} assignments created, {total_emails_sent} email notifications sent."
+    )
     return redirect("exams:exam_detail", pk=exam.pk)
 
 
@@ -599,14 +976,14 @@ def confirm_assignment(request, pk):
 
 @login_required
 def decline_assignment(request, pk):
-    """Decline a pending invigilation assignment."""
+    """Decline a pending invigilation assignment (Admin view)."""
     assignment = get_object_or_404(InvigilationAssignment, pk=pk, status=InvigilationAssignment.PENDING_CONFIRMATION)
     if request.method == "POST":
         reason = request.POST.get("reason", "").strip()
         assignment.status = InvigilationAssignment.DECLINED
         assignment.declined_at = timezone.now()
-        assignment.save(update_fields=["status", "declined_at"])
-        # Optionally store reason if you add a field later
+        assignment.decline_reason = reason
+        assignment.save(update_fields=["status", "declined_at", "decline_reason"])
         messages.success(request, f"Assignment for {assignment.faculty.user.get_full_name()} declined.")
         return redirect("exams:pending_assignments")
     return render(request, "exams/decline_assignment.html", {"assignment": assignment})
@@ -679,8 +1056,14 @@ def faculty_dashboard(request):
         .select_related("exam_session_hall__exam", "exam_session_hall__hall")
         .order_by("exam_session_hall__exam__exam_date", "exam_session_hall__exam__start_time")
     )
+    
+    # Check if there are any pending assignments
+    has_pending_assignments = assignments.filter(status=InvigilationAssignment.PENDING_CONFIRMATION).exists()
 
-    return render(request, "exams/faculty_dashboard.html", {"assignments": assignments})
+    return render(request, "exams/faculty_dashboard.html", {
+        "assignments": assignments,
+        "has_pending_assignments": has_pending_assignments
+    })
 
 
 @login_required
@@ -702,19 +1085,31 @@ def confirm_assignment(request, pk):
 
 
 @login_required
+@login_required
 def decline_assignment(request, pk):
+    """Faculty declines their invigilation assignment"""
+    from exams.utils import send_assignment_declined_notification_to_admin
+    
     assignment = get_object_or_404(
-        InvigilationAssignment.objects.select_related("faculty", "exam_session_hall__exam"), pk=pk
+        InvigilationAssignment.objects.select_related("faculty", "exam_session_hall__exam", "exam_session_hall__hall"), pk=pk
     )
 
     if not hasattr(request.user, "faculty_profile") or assignment.faculty != request.user.faculty_profile:  # type: ignore[attr-defined]
         messages.error(request, "You are not allowed to modify this assignment.")
         return redirect("exams:faculty_dashboard")
 
-    assignment.status = InvigilationAssignment.DECLINED
-    assignment.declined_at = timezone.now()
-    assignment.save(update_fields=["status", "declined_at"])
-
-    messages.success(request, "You have marked yourself as not available for this duty. Admin will be notified.")
-    return redirect("exams:faculty_dashboard")
+    if request.method == "POST":
+        reason = request.POST.get("reason", "").strip()
+        assignment.status = InvigilationAssignment.DECLINED
+        assignment.declined_at = timezone.now()
+        assignment.decline_reason = reason
+        assignment.save(update_fields=["status", "declined_at", "decline_reason"])
+        
+        # Send notification to admin
+        send_assignment_declined_notification_to_admin(assignment)
+        
+        messages.success(request, "You have declined this duty. Admin has been notified for reassignment.")
+        return redirect("exams:faculty_dashboard")
+    
+    return render(request, "exams/decline_assignment.html", {"assignment": assignment})
 

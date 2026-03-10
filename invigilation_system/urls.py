@@ -24,5 +24,6 @@ urlpatterns = [
     path('exams/', include('exams.urls', namespace='exams')),
     path('timetable/', include('timetable.urls', namespace='timetable')),
     path('leaves/', include('leaves.urls', namespace='leaves')),
+    path('notifications/', include('notifications.urls', namespace='notifications')),
     path('', accounts_views.public_home, name='home'),
 ]

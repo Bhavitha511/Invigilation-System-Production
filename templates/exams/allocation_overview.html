@@ -11,7 +11,7 @@
     <select name="date" id="id_date" class="form-select">
       <option value="">All dates</option>
       {% for d in dates %}
-        <option value="{{ d }}" {% if filter_date == d|stringformat:'s' %}selected{% endif %}>{{ d }}</option>
+        <option value="{{ d|date:'Y-m-d' }}" {% if filter_date == d|date:'Y-m-d' %}selected{% endif %}>{{ d }}</option>
       {% endfor %}
     </select>
   </div>
