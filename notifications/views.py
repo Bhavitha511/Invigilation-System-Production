@@ -27,13 +27,15 @@ def notification_list(request):
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
     
-    # Count unread
+    # Count unread and read
     unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
+    read_count = Notification.objects.filter(user=request.user, is_read=True).count()
     
     context = {
         'page_obj': page_obj,
         'filter_type': filter_type,
         'unread_count': unread_count,
+        'read_count': read_count,
     }
     
     return render(request, 'notifications/notification_list.html', context)
