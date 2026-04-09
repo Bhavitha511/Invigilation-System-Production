@@ -1,0 +1,112 @@
+CONFLICT EXAM DETAILS
+=====================
+Course     : CS501 - Advanced Algorithms
+Department : CSE (Computer Science and Engineering)
+Year       : 4th Year, Semester 1
+Date       : Monday, 27 April 2026
+Time       : 09:00 AM - 12:00 PM
+Exam Type  : End Semester
+
+
+WHY THIS EXAM CONFLICTS WITH EVERY FACULTY
+===========================================
+
+The auto-allocation algorithm checks timetable clashes using this rule:
+  - If a faculty teaches the SAME year as the exam year on that day/time → NO CLASH (class is cancelled, students are in exam)
+  - If a faculty teaches a DIFFERENT year on that day/time → CLASH (those students still need teaching)
+
+This exam is for CSE Year 4. So any faculty teaching Year 1, 2, or 3 on Monday 09:00-12:00 will have a CLASH.
+Faculty with no Monday slot are still excluded because they belong to ECE/EEE/MECH/CIVIL — same dept exclusion does not apply here,
+but the ones below all have direct timetable conflicts.
+
+
+FACULTY-WISE CONFLICT BREAKDOWN
+================================
+
+1. Ravi Kumar (EMP001) — ECE Dept
+   Timetable on Monday: 09:00-10:00 → EC301 Digital Electronics → Teaching Year 3
+   Exam is for Year 4 → DIFFERENT YEAR → CLASH
+   Conflict window: 09:00-10:00 overlaps with exam 09:00-12:00
+
+2. Priya Sharma (EMP002) — EEE Dept
+   No Monday slot BUT has Tuesday/Thursday/Friday slots.
+   On Monday she is FREE — however she teaches Year 3 and Year 2 students on other days.
+   On this specific Monday she has NO class → she will be ELIGIBLE (no clash on Monday).
+   Note: She is the only one potentially eligible from the seeded faculty on this day.
+
+3. Suresh Reddy (EMP003) — MECH Dept
+   Timetable on Monday: 10:00-11:00 → ME301 Thermodynamics → Teaching Year 3
+   Exam is for Year 4 → DIFFERENT YEAR → CLASH
+   Conflict window: 10:00-11:00 overlaps with exam 09:00-12:00
+
+4. Anitha Nair (EMP004) — CIVIL Dept
+   No Monday slot.
+   On Monday she is FREE → ELIGIBLE (no clash on Monday).
+
+5. Venkat Rao (EMP005) — ECE Dept
+   Timetable on Monday: 11:00-12:00 → EC401 VLSI Design → Teaching Year 4
+   Exam is also for Year 4 → SAME YEAR → NO CLASH (class cancelled, students in exam)
+   BUT: Venkat also has 09:00-10:00? No — he has no 09:00 slot on Monday.
+   Result: No clash → ELIGIBLE.
+
+6. Deepa Menon (EMP006) — EEE Dept
+   Timetable on Monday: 09:00-10:00 → EE401 High Voltage Engineering → Teaching Year 4
+   Exam is for Year 4 → SAME YEAR → NO CLASH (class cancelled)
+   Result: No clash → ELIGIBLE.
+
+7. Kiran Babu (EMP007) — MECH Dept
+   No Monday slot.
+   On Monday he is FREE → ELIGIBLE.
+
+8. Lakshmi Iyer (EMP008) — CIVIL Dept
+   Timetable on Monday: 14:00-15:00 → CE401 Foundation Engineering → Teaching Year 4
+   Exam ends at 12:00, slot starts at 14:00 → NO TIME OVERLAP → ELIGIBLE.
+
+9. Arun Pillai (EMP009) — ECE Dept
+   No Monday slot.
+   On Monday he is FREE → ELIGIBLE.
+
+10. Meena Krishnan (EMP010) — EEE Dept
+    Timetable on Monday: 10:00-11:00 → EE201 Electrical Machines → Teaching Year 2
+    Exam is for Year 4 → DIFFERENT YEAR → CLASH
+    Conflict window: 10:00-11:00 overlaps with exam 09:00-12:00
+
+
+SUMMARY OF CONFLICTS
+====================
+
+Faculty with TIMETABLE CLASH (will be flagged, AllocationSuggestion created):
+  - Ravi Kumar    (EMP001) → Teaching Y3 ECE at 09:00-10:00 on Monday
+  - Suresh Reddy  (EMP003) → Teaching Y3 MECH at 10:00-11:00 on Monday
+  - Meena Krishnan(EMP010) → Teaching Y2 EEE at 10:00-11:00 on Monday
+
+Faculty ELIGIBLE for assignment (no clash on Monday):
+  - Priya Sharma  (EMP002) → No Monday class
+  - Anitha Nair   (EMP004) → No Monday class
+  - Venkat Rao    (EMP005) → Teaching Y4 at 11:00 (same year, class cancelled)
+  - Deepa Menon   (EMP006) → Teaching Y4 at 09:00 (same year, class cancelled)
+  - Kiran Babu    (EMP007) → No Monday class
+  - Lakshmi Iyer  (EMP008) → Class at 14:00 (no time overlap with 09:00-12:00 exam)
+  - Arun Pillai   (EMP009) → No Monday class
+
+
+WHAT HAPPENS WHEN YOU ALLOCATE DUTIES
+======================================
+When you click "Assign Duties" for this exam, the system will:
+1. Automatically assign from the 7 eligible faculty above
+2. Flag EMP001, EMP003, EMP010 as having timetable clashes
+3. Create AllocationSuggestions for those 3 faculty with options:
+   - Swap their class with another faculty
+   - Reschedule the class
+   - Find a substitute
+   - Cancel the class for the day
+4. Admin can review these suggestions and manually implement them if needed
+
+
+KEY POINT FOR VIVA
+==================
+This demonstrates the intelligence of the allocation algorithm:
+- It does NOT blindly exclude all faculty with Monday classes
+- It checks if the class is for the SAME year (students are in exam → class cancelled → faculty is free)
+- Only faculty teaching DIFFERENT year students get flagged as conflicted
+- This is the core business logic that makes the system smart
