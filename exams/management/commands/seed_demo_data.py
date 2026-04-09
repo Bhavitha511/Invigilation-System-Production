@@ -246,7 +246,9 @@ class Command(BaseCommand):
                         exam_session_hall__exam=exam, faculty=faculty
                     ).exists():
                         continue
-                    exam_start_dt = datetime.combine(exam.exam_date, exam.start_time)
+                    exam_date = exam.exam_date if hasattr(exam.exam_date, 'year') else date.fromisoformat(str(exam.exam_date))
+                    exam_start_time = exam.start_time if hasattr(exam.start_time, 'hour') else time.fromisoformat(str(exam.start_time))
+                    exam_start_dt = datetime.combine(exam_date, exam_start_time)
                     deadline = timezone.make_aware(exam_start_dt) - timedelta(hours=1, minutes=30)
                     InvigilationAssignment.objects.create(
                         exam_session_hall=session,
